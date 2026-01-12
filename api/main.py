@@ -21,7 +21,8 @@ app = FastAPI(title="Trading Analysis Chatbot")
 # ==============================
 ACCOUNT_BALANCE = 100_000
 
-ALLOWED_RISK_LEVELS = {0.1, 0.5, 1.0, 2.0}
+MIN_RISK_PERCENT = 0.1
+MAX_RISK_PERCENT = 10.0
 DEFAULT_RISK = 1.0
 
 # ==============================
@@ -52,10 +53,10 @@ def analyze(
     # ------------------
     # VALIDATION
     # ------------------
-    if risk_percent not in ALLOWED_RISK_LEVELS:
+    if risk_percent < MIN_RISK_PERCENT or risk_percent > MAX_RISK_PERCENT:
         return {
             "error": "Invalid risk_percent",
-            "allowed_values": sorted(ALLOWED_RISK_LEVELS)
+            "allowed_range": f"{MIN_RISK_PERCENT}% to {MAX_RISK_PERCENT}%"
         }
 
     if max_lot_size is not None:
