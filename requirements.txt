@@ -29,4 +29,4 @@ tzdata==2025.3
 urllib3==2.6.3
 uvicorn==0.40.0
 apscheduler==3.11.0
-twilio==8.4.1
+twilio>=9.0.2
