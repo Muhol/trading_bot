@@ -8,11 +8,14 @@ from risk.position_sizer import PositionSizer
 from analytics.trend_engine import TrendEngine
 from analytics.volatility import calculate_volatility
 from analytics.confidence_score import calculate_confidence
+from analytics.recheck_engine import RecheckDecisionEngine
 from data.validators import validate_trade
 
 from execution.order_builder import OrderBuilder
 from execution.brokers.paper import PaperBroker
 from execution.brokers.mt5 import MT5Bridge
+from notifications.recheck_scheduler import schedule_recheck
+
 
 app = FastAPI(title="Trading Analysis Chatbot")
 
@@ -75,6 +78,10 @@ def analyze(
     trend = trend_engine.classify_trend(df)
     entry = float(df.close.iloc[-1])
 
+    # These MUST be exposed by your strategy
+    rsi_value = strategy.last_rsi
+    ema_slope = strategy.ema_slope
+
     stop = take_profit = None
     sizing = None
     valid = False
@@ -123,6 +130,28 @@ def analyze(
     )
 
     # ------------------
+    # RE-CHECK LOGIC (ONLY IF NO TRADE)
+    # ------------------
+    recheck_advice = None
+
+    if not valid:
+        state = RecheckDecisionEngine.determine_state(
+            signal=signal,
+            trend=trend,
+            rsi=rsi_value,
+            volatility=volatility,
+            ema_slope=ema_slope
+        )
+
+        recheck_advice = RecheckDecisionEngine.build_recheck_response(
+            state=state,
+            timeframe=interval
+        )
+
+    if recheck_advice:
+        schedule_recheck(symbol, recheck_advice)
+
+    # ------------------
     # RESPONSE
     # ------------------
     response = {
@@ -147,6 +176,9 @@ def analyze(
             "risk_amount": round(sizing["risk_amount"], 2),
             "pip_distance": round(sizing["pip_distance"], 4)
         })
+
+    if recheck_advice:
+        response["recheck_advice"] = recheck_advice
 
     return response
 
