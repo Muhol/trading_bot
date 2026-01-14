@@ -9,7 +9,6 @@ from analytics.trend_engine import TrendEngine
 from analytics.volatility import calculate_volatility
 from analytics.confidence_score import calculate_confidence
 from analytics.recheck_engine import RecheckDecisionEngine
-from analytics.news_engine import NewsDecisionEngine
 from data.validators import validate_trade
 
 from execution.order_builder import OrderBuilder
@@ -72,25 +71,6 @@ def analyze(
         }
 
     # ------------------
-    # NEWS ENGINE (📰 NEW)
-    # ------------------
-    news_info = NewsDecisionEngine.check_news(symbol)
-    news_safe = news_info["news_safe"]
-
-    # If high-risk news → BLOCK TRADE
-    if not news_safe:
-        return {
-            "symbol": symbol,
-            "interval": interval,
-            "signal": "NO_TRADE",
-            "trade_allowed": False,
-            "news_safe": False,
-            "news_event": news_info["event"],
-            "impact": news_info["impact"],
-            "recommended_action": news_info["recommendation"]
-        }
-
-    # ------------------
     # MARKET DATA
     # ------------------
     df = data_router.fetch_ohlcv(symbol, interval)
@@ -108,7 +88,7 @@ def analyze(
     lot_mode = "auto"
 
     # ------------------
-    # TRADE LOGIC
+    # TRADE LOGIC WITH ENHANCED RISK
     # ------------------
     if signal in ("BUY", "SELL"):
         stop = fixed_percentage_stop(entry, 0.01, signal)
@@ -124,6 +104,7 @@ def analyze(
 
         if trade_allowed:
             if lot_size is not None:
+                # MANUAL LOT MODE
                 sizing = PositionSizer.calculate_from_lot(
                     symbol=symbol,
                     balance=account_balance,
@@ -132,7 +113,9 @@ def analyze(
                     stop_loss=stop
                 )
                 lot_mode = "manual"
+
             else:
+                # AUTO SAFE MODE
                 sizing = PositionSizer.calculate_position(
                     symbol=symbol,
                     balance=account_balance,
@@ -142,11 +125,16 @@ def analyze(
                 )
                 lot_mode = "auto"
 
+                if sizing["lots"] < MIN_LOT_SIZE:
+                    return {
+                        "error": "Account balance too small for safe trading",
+                        "suggestion": "Reduce risk or use higher timeframe"
+                    }
+
     # ------------------
     # ANALYTICS
     # ------------------
     volatility = calculate_volatility(df)
-
     confidence = calculate_confidence(
         structure_score=0.7,
         indicator_score=0.8,
@@ -158,7 +146,6 @@ def analyze(
     # RE-CHECK ENGINE
     # ------------------
     recheck_advice = None
-
     if not trade_allowed:
         state = RecheckDecisionEngine.determine_state(
             signal=signal,
@@ -192,9 +179,10 @@ def analyze(
         "trade_allowed": trade_allowed,
         "risk_percent": risk_percent,
         "lot_mode": lot_mode,
-        "news_safe": True,
-        "news_event": news_info["event"],
-        "news_impact": news_info["impact"]
+        "lot_constraints": {
+            "min_lot": MIN_LOT_SIZE,
+            "max_lot": MAX_LOT_SIZE
+        }
     }
 
     if sizing:
@@ -205,8 +193,11 @@ def analyze(
             "actual_risk_percent": round(sizing["actual_risk_percent"], 2),
             "pip_distance": round(sizing["pip_distance"], 2)
         })
+        if lot_mode == "manual" and sizing["actual_risk_percent"] > risk_percent * 2:
+            response["warning"] = "Manual lot size exceeds safe risk threshold"
 
     if recheck_advice:
         response["recheck_advice"] = recheck_advice
 
     return response
+
