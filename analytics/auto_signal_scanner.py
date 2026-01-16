@@ -24,6 +24,8 @@ class AutoSignalScanner:
         account_balance: float,
         risk_percent: float
     ):
+        from api.main import analyze  # import inside the function
+
         for symbol in AutoSignalScanner.SYMBOLS:
             try:
                 result = analyze(
