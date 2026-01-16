@@ -15,9 +15,15 @@ from execution.order_builder import OrderBuilder
 from execution.brokers.paper import PaperBroker
 from execution.brokers.mt5 import MT5Bridge
 from notifications.recheck_scheduler import schedule_recheck
-
+from analytics.signal_validator import SignalValidator
+from analytics.signal_ranker import SignalRanker
+from analytics.signal_dispatcher import SignalDispatcher
+from api.user import router as users_router
+from analytics.auto_signal_scanner import AutoSignalScanner
 
 app = FastAPI(title="Trading Analysis Chatbot")
+
+app.include_router(users_router)
 
 # ==============================
 # CONFIG
@@ -36,6 +42,19 @@ data_router = MarketDataRouter()
 strategy = EMARsiStrategy()
 trend_engine = TrendEngine()
 paper_broker = PaperBroker()
+
+@app.post("/scan-and-send")
+def scan_and_send(
+    interval: str = "1h",
+    account_balance: float = Query(..., gt=0),
+    risk_percent: float = DEFAULT_RISK
+):
+    AutoSignalScanner.scan_and_dispatch(
+        interval=interval,
+        account_balance=account_balance,
+        risk_percent=risk_percent
+    )
+    return {"status": "Signal scan completed"}
 
 # ==============================
 # HEALTH
@@ -161,6 +180,28 @@ def analyze(
         )
 
         schedule_recheck(symbol, recheck_advice)
+
+    if trade_allowed and sizing:
+        rr_ratio = abs(take_profit - entry) / abs(entry - stop)
+
+    signal_payload = {
+        "symbol": symbol,
+        "signal": signal,
+        "interval": interval,
+        "entry_price": entry,
+        "stop_loss": stop,
+        "take_profit": take_profit,
+        "confidence_percent": confidence,
+        "lot_size": sizing["lots"],
+        "rr_ratio": round(rr_ratio, 2),
+        "volatility": volatility
+    }
+
+    valid, reason = SignalValidator.validate(signal_payload)
+
+    if valid:
+        highlighted = SignalRanker.is_high_profit(signal_payload)
+        SignalDispatcher.send(signal_payload, highlighted)
 
     # ------------------
     # RESPONSE

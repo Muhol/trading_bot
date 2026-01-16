@@ -1,31 +1,26 @@
-from apscheduler.schedulers.background import BackgroundScheduler
+import os
 from datetime import datetime, timedelta
 from notifications.whatsapp_notifier import WhatsAppNotifier
 
-scheduler = BackgroundScheduler()
-scheduler.start()
 
-notifier = WhatsAppNotifier()
+def schedule_recheck(symbol: str, recheck_advice: dict):
+    """
+    Placeholder scheduler.
+    For now, it only sends a WhatsApp message immediately.
+    """
+    notifier = WhatsAppNotifier()
 
-
-def schedule_recheck(symbol: str, advice: dict):
-    minutes = advice["estimated_wait_minutes"]
-
-    run_time = datetime.utcnow() + timedelta(minutes=minutes)
+    if not recheck_advice:
+        return
 
     message = (
-        f"📊 Trading Bot Reminder\n\n"
+        f"📊 Market Update Alert\n\n"
         f"Symbol: {symbol}\n"
-        f"Market State: {advice['market_state']}\n"
-        f"Reason: {advice['next_check_hint']}\n\n"
-        f"⏰ Time to re-check now ({advice['recheck_timeframe']})"
+        f"Reason: {recheck_advice.get('reason')}\n"
+        f"Re-check in: {recheck_advice.get('recheck_in')}\n"
     )
 
-    scheduler.add_job(
-        notifier.send,
-        "date",
-        run_date=run_time,
-        args=[message],
-        id=f"{symbol}_{run_time.timestamp()}",
-        replace_existing=False
-    )
+    # ⚠️ Replace with user's WhatsApp later (Phase 3.2)
+    demo_number = os.getenv("ADMIN_WHATSAPP_NUMBER")
+    if demo_number:
+        notifier.send_message(demo_number, message)
